@@ -1,2 +1,4 @@
 ^rnaseq\.hs\.lf\.tgfb\.mcti\.Rproj$
 ^\.Rproj\.user$
+^data-raw$
+^_targets.yaml$
