@@ -1,0 +1,16 @@
+# Environment for running Snakemake.
+#
+# Install via miniforge/mamba (NOT Anaconda):
+#   mamba env create -f data-raw/envs/snakemake.yaml
+#   mamba activate snakemake
+#
+# Install miniforge from: https://github.com/conda-forge/miniforge
+name: snakemake
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - snakemake>=8.0
+  - mamba
+  - python>=3.11

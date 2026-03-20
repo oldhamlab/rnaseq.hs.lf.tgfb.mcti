@@ -14,7 +14,7 @@ tar_option_set(
   #   "extrafont"
   # ),
   format = "qs",
-  controller = crew::crew_controller_local(workers = 4, seconds_idle = 60),
+  # controller = crew::crew_controller_local(workers = 4, seconds_idle = 60),
   # error = "continue"
 )
 
@@ -26,8 +26,20 @@ tar_source("data-raw/R")
 
 list(
   tar_target(
-    test,
-    do_test()
-  )
+    sra_manifest,
+    download_sra_runinfo("PRJNA1011992", "data-raw/sra/sample-manifest.csv"),
+    format = "file"
+  ),
+  tar_target(
+    samples_file,
+    make_samples_tsv(sra_manifest, "data-raw/sra/samples.tsv"),
+    format = "file"
+  ),
+  tar_target(
+    quant_files,
+    run_snakemake(samples_file),
+    format = "file"
+  ),
+  NULL
 )
 
