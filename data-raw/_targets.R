@@ -9,13 +9,10 @@ suppressPackageStartupMessages({
 
 # targets options
 tar_option_set(
-  # packages = c(
-  #   "SummarizedExperiment",
-  #   "extrafont"
-  # ),
-  format = "qs",
-  # controller = crew::crew_controller_local(workers = 4, seconds_idle = 60),
-  # error = "continue"
+  packages = c(
+    "org.Hs.eg.db"
+  ),
+  format = "qs"
 )
 
 # source functions
@@ -40,6 +37,31 @@ list(
     run_snakemake(samples_file),
     format = "file"
   ),
-  NULL
+  tar_target(
+    mcti,
+    build_coldata_mcti(quant_files, samples_file) |>
+      import_tximeta()
+  ),
+  tar_target(
+    vb253,
+    build_coldata_vb253(quant_files, samples_file) |>
+      import_tximeta()
+  ),
+  tar_target(
+    export_mcti,
+    {
+      usethis::use_data(mcti, overwrite = TRUE, compress = "xz", version = 3)
+      "data/mcti.rda"
+    },
+    format = "file"
+  ),
+  tar_target(
+    export_vb253,
+    {
+      usethis::use_data(vb253, overwrite = TRUE, compress = "xz", version = 3)
+      "data/vb253.rda"
+    },
+    format = "file"
+  )
 )
 
