@@ -2,3 +2,6 @@
 ^\.Rproj\.user$
 ^data-raw$
 ^_targets.yaml$
+^README\.Rmd$
+^\.snakemake$
+^LICENSE\.md$
