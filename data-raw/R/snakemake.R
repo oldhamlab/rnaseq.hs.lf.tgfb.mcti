@@ -17,7 +17,7 @@
 run_snakemake <- function(samples_file,
                           snakefile = "data-raw/Snakefile",
                           configfile = "data-raw/config.yaml",
-                          cores = 7L) {
+                          cores = 16L) {
   config <- yaml::read_yaml(configfile)
 
   smk <- config$snakemake_bin

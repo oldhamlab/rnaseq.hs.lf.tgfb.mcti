@@ -1,8 +1,8 @@
 # Snakefile
 #
 # Combined RNA-seq pipeline for MCTi (2022) and VB253 (2025) experiments.
-# Downloads reads from SRA, builds a shared GENCODE/Salmon index,
-# and quantifies all samples.
+# Downloads reads from ENA/SRA via kingfisher, builds a shared GENCODE/Salmon
+# index, and quantifies all samples.
 #
 # Prerequisites:
 #   Install Snakemake via miniforge/mamba (NOT Anaconda):
@@ -30,15 +30,16 @@ SAMPLES = [row["sample_name"] for row in _rows]
 SRR_MAP = {row["sample_name"]: row["run"] for row in _rows}
 
 # ---------------------------------------------------------------------------
-# Shorthand config refs
+# Config refs
 # ---------------------------------------------------------------------------
-READS   = config["reads_dir"]
-INDEX   = config["index_dir"]
-QUANTS  = config["quants_dir"]
-THREADS = config["threads"]
-GV      = str(config["gencode_version"])
+READS    = config["reads_dir"]
+INDEX    = config["index_dir"]
+QUANTS   = config["quants_dir"]
+THREADS  = config["threads"]
+GV       = str(config["gencode_version"])
+DL_METHODS = config["download_methods"]
 
-# Pre-compute reference file paths (avoids f-strings in rule blocks)
+# Pre-compute reference file paths
 TRANSCRIPTS_FA = os.path.join(INDEX, "gencode.v" + GV + ".transcripts.fa.gz")
 GENOME_FA      = os.path.join(INDEX, "GRCh38.primary_assembly.genome.fa.gz")
 DECOYS_TXT     = os.path.join(INDEX, "decoys.txt")
@@ -56,47 +57,31 @@ rule all:
         expand(os.path.join(QUANTS, "{sample}", "quant.sf"), sample=SAMPLES)
 
 # ---------------------------------------------------------------------------
-# Download reads from SRA
+# Download reads via kingfisher
 # ---------------------------------------------------------------------------
-rule prefetch:
+rule download_reads:
     output:
-        temp(os.path.join(READS, "sra", "{sample}.sra"))
+        r1 = os.path.join(READS, "{sample}_1.fastq.gz"),
+        r2 = os.path.join(READS, "{sample}_2.fastq.gz")
     params:
         srr = lambda wc: SRR_MAP[wc.sample],
-        outdir = os.path.join(READS, "sra")
+        outdir = READS,
+        methods = DL_METHODS
+    threads: 4
+    retries: 3
     conda:
-        "envs/sra-tools.yaml"
+        "envs/kingfisher.yaml"
     shell:
         """
         mkdir -p {params.outdir}
-        prefetch {params.srr} --output-file {output}
-        """
-
-rule fasterq_dump:
-    input:
-        os.path.join(READS, "sra", "{sample}.sra")
-    output:
-        r1 = os.path.join(READS, "{sample}_1.fq.gz"),
-        r2 = os.path.join(READS, "{sample}_2.fq.gz")
-    params:
-        tmpdir = os.path.join(READS, "tmp"),
-        r1_tmp = os.path.join(READS, "tmp", "{sample}_1.fastq"),
-        r2_tmp = os.path.join(READS, "tmp", "{sample}_2.fastq")
-    threads: THREADS
-    conda:
-        "envs/sra-tools.yaml"
-    shell:
-        """
-        mkdir -p {params.tmpdir}
-        fasterq-dump {input} \
-            --outdir {params.tmpdir} \
-            --outfile {wildcards.sample}.fastq \
-            --threads {threads} \
-            --split-files \
-            --temp {params.tmpdir}
-        pigz -c {params.r1_tmp} > {output.r1}
-        pigz -c {params.r2_tmp} > {output.r2}
-        rm -f {params.r1_tmp} {params.r2_tmp}
+        cd {params.outdir}
+        kingfisher get \
+            -r {params.srr} \
+            -m {params.methods} \
+            -f fastq.gz \
+            -t {threads}
+        mv {params.srr}_1.fastq.gz {wildcards.sample}_1.fastq.gz
+        mv {params.srr}_2.fastq.gz {wildcards.sample}_2.fastq.gz
         """
 
 # ---------------------------------------------------------------------------
@@ -135,8 +120,6 @@ rule decoys:
         genome = GENOME_FA
     output:
         DECOYS_TXT
-    conda:
-        "envs/salmon.yaml"
     shell:
         """
         grep '^>' <(gunzip -c {input.genome}) | cut -d ' ' -f 1 | sed 's/>//g' \
@@ -169,8 +152,8 @@ rule salmon_index:
 # ---------------------------------------------------------------------------
 rule quant:
     input:
-        r1 = os.path.join(READS, "{sample}_1.fq.gz"),
-        r2 = os.path.join(READS, "{sample}_2.fq.gz"),
+        r1 = os.path.join(READS, "{sample}_1.fastq.gz"),
+        r2 = os.path.join(READS, "{sample}_2.fastq.gz"),
         index = SALMON_IDX
     output:
         os.path.join(QUANTS, "{sample}", "quant.sf")

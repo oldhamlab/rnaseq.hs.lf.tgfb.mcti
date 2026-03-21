@@ -6,6 +6,12 @@
 # Find with: mamba activate snakemake && which snakemake
 snakemake_bin: /Users/will/.local/share/mamba/envs/snakemake/bin/snakemake
 
+# Kingfisher download methods, tried in order.
+# Options: ena-ascp, ena-ftp, aws-http, prefetch
+# Use "ena-ascp ena-ftp aws-http prefetch" once data is mirrored on ENA.
+# Use "aws-http prefetch" for recently released data.
+download_methods: "aws-http prefetch"
+
 # Where to store downloaded FASTQ files
 reads_dir: data-raw/reads
 
@@ -16,7 +22,7 @@ index_dir: data-raw/index
 quants_dir: data-raw/quants
 
 # Number of threads for Salmon and fasterq-dump
-threads: 8
+threads: 16
 
 # GENCODE reference version
 gencode_version: 47
