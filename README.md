@@ -5,6 +5,7 @@
 
 <!-- badges: start -->
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19198539.svg)](https://doi.org/10.5281/zenodo.19198539)
 <!-- badges: end -->
 
 This package is a repository for human lung fibroblast RNA-seq data
@@ -54,7 +55,7 @@ mapping checks.
 ## Processing
 
 For both experiments, reads were aligned to transcript sequences from
-GENCODE release 47 using `salmon` and imported into R as
+GENCODE release 47 using `salmon` v1.10.2 and imported into R as
 `SummarizedExperiment` objects via `tximeta`. The full processing
 pipeline, including read download from SRA, quantification, and
 annotation, is documented in the `data-raw` folder of the package
