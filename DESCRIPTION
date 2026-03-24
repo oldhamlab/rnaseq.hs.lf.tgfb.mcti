@@ -48,3 +48,5 @@ Suggests:
     tidyr,
     viper
 VignetteBuilder: knitr
+URL: https://github.com/oldhamlab/rnaseq.hs.lf.tgfb.mcti
+BugReports: https://github.com/oldhamlab/rnaseq.hs.lf.tgfb.mcti/issues
