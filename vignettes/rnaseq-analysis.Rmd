@@ -1,0 +1,456 @@
+---
+title: "Differential Expression Analysis of MCT Inhibitor RNA-seq Data"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{test}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 5,
+  warning = FALSE,
+  message = FALSE,
+  eval = TRUE
+)
+```
+
+## Overview
+
+This vignette demonstrates a differential expression analysis of the RNA-seq
+data in the `rnaseq.hs.lf.tgfb.mcti` package. The package contains two
+experiments examining the effects of lactate transporter inhibition on
+TGFβ-stimulated human lung fibroblasts:
+
+- **`mcti`**: MCT1 inhibitor AZD3965, MCT4 inhibitor VB124, and dual
+inhibition (4 replicates × 2 conditions × 4 treatments = 32 samples)
+- **`vb253`**: MCT4 inhibitor VB253 (4 replicates × 2 conditions ×
+2 treatments = 16 samples)
+
+The analysis covers principal component analysis (PCA), differential expression
+with DESeq2, gene set enrichment analysis (GSEA) with Hallmark pathways, and
+transcription factor enrichment analysis (TFEA) with DoRothEA regulons.
+
+```{r packages}
+library(rnaseq.hs.lf.tgfb.mcti)
+library(SummarizedExperiment)
+library(DESeq2)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(tibble)
+library(ggplot2)
+```
+
+## Preparing the DESeq2 datasets
+
+Both experiments use a combined condition–treatment group factor for modeling.
+The MCTi experiment includes a replicate term to account for biological batch
+effects across the four independent replicates. The `/` in `AZD/VB` is replaced
+with `.` to avoid conflicts with formula parsing in downstream tools.
+
+```{r prepare-se}
+prepare_dds <- function(se, design) {
+  se$group <-
+    str_c(se$condition, se$treatment, sep = ".") |>
+    str_replace_all("/", ".") |>
+    factor(levels = paste(
+      rep(levels(se$condition), each = nlevels(se$treatment)),
+      rep(levels(se$treatment), nlevels(se$condition)),
+      sep = "."
+    ) |> str_replace_all("/", "."))
+  
+  dds <-
+    DESeqDataSet(se, design = design) |>
+    DESeq()
+  
+  rownames(dds) <- str_replace(rownames(dds), "\\.\\d+$", "")
+  
+  keep <- rowSums(counts(dds, normalized = TRUE) >= 0.5) >= 4
+  dds[keep, ]
+}
+```
+
+```{r fit-deseq2}
+data(mcti)
+data(vb253)
+
+dds_mcti <- prepare_dds(mcti, ~ replicate + group)
+dds_vb253 <- prepare_dds(vb253, ~ group)
+```
+
+## Principal component analysis
+
+Variance-stabilized counts are used for PCA. For the MCTi experiment, replicate
+batch effects are removed with `limma::removeBatchEffect()` prior to
+visualization.
+
+```{r pca-function}
+plot_pca <- function(dds, remove_batch = FALSE) {
+  vsd <- vst(dds, blind = FALSE)
+  
+  if (remove_batch) {
+    assay(vsd) <- limma::removeBatchEffect(assay(vsd), vsd$replicate)
+  }
+  
+  pca_data <- plotPCA(vsd, intgroup = c("condition", "treatment"),
+                      returnData = TRUE)
+  pct <- round(100 * attr(pca_data, "percentVar"))
+  
+  ggplot(pca_data, aes(PC1, PC2, color = group)) +
+    geom_point(size = 3) +
+    labs(
+      x = paste0("PC1: ", pct[1], "% variance"),
+      y = paste0("PC2: ", pct[2], "% variance"),
+      color = NULL
+    ) +
+    theme_minimal()
+}
+```
+
+### MCTi
+
+TGFβ drives the primary axis of variation. Inhibitor effects are visible along
+PC2 after batch correction.
+
+```{r pca-mcti, fig.cap = "PCA of the MCTi experiment after batch correction."}
+plot_pca(dds_mcti, remove_batch = TRUE)
+```
+
+### VB253
+
+```{r pca-vb253, fig.cap = "PCA of the VB253 experiment."}
+plot_pca(dds_vb253)
+```
+
+## Differential expression
+
+We extract results for each comparison of interest using the group contrasts,
+then apply `ashr` log-fold-change shrinkage. The unshrunken Wald statistic is
+retained for GSEA ranking.
+
+```{r de-function}
+get_results <- function(dds, contrast, alpha = 0.05) {
+  res <- results(dds, contrast = contrast, alpha = alpha)
+  res_shrunk <- lfcShrink(dds, res = res, type = "ashr")
+  
+  as_tibble(res_shrunk, rownames = "row") |>
+    mutate(stat = res$stat) |>
+    left_join(
+      as_tibble(rowData(dds)[, c("entrezid", "symbol")], rownames = "row"),
+      by = "row"
+    ) |>
+    relocate(symbol, entrezid, .after = row) |>
+    arrange(padj)
+}
+```
+
+### MCTi contrasts
+
+```{r de-mcti}
+deg_tgfb <- get_results(dds_mcti, c("group", "TGFβ.VEH", "CTL.VEH"))
+deg_azd  <- get_results(dds_mcti, c("group", "TGFβ.AZD", "TGFβ.VEH"))
+deg_vb   <- get_results(dds_mcti, c("group", "TGFβ.VB", "TGFβ.VEH"))
+deg_dual <- get_results(dds_mcti, c("group", "TGFβ.AZD.VB", "TGFβ.VEH"))
+```
+
+### VB253 contrasts
+
+```{r de-vb253}
+deg_tgfb_vb253 <- get_results(dds_vb253, c("group", "TGFβ.VEH", "CTL.VEH"))
+deg_vb253      <- get_results(dds_vb253, c("group", "TGFβ.VB253", "TGFβ.VEH"))
+```
+
+### Summary
+
+```{r de-summary}
+tibble(
+  comparison = c(
+    "TGFβ vs CTL (MCTi)", "AZD vs VEH", "VB vs VEH",
+    "AZD/VB vs VEH", "TGFβ vs CTL (VB253)", "VB253 vs VEH"
+  ),
+  significant = c(
+    sum(deg_tgfb$padj < 0.05, na.rm = TRUE),
+    sum(deg_azd$padj < 0.05, na.rm = TRUE),
+    sum(deg_vb$padj < 0.05, na.rm = TRUE),
+    sum(deg_dual$padj < 0.05, na.rm = TRUE),
+    sum(deg_tgfb_vb253$padj < 0.05, na.rm = TRUE),
+    sum(deg_vb253$padj < 0.05, na.rm = TRUE)
+  )
+)
+```
+
+## Volcano plots
+
+```{r volcano-function}
+plot_volcano <- function(deg, title = "") {
+  df <-
+    deg |>
+    filter(!is.na(padj), !is.na(symbol)) |>
+    mutate(sig = if_else(padj < 0.05, "sig", "ns"))
+  
+  top <-
+    df |>
+    filter(sig == "sig") |>
+    slice_min(padj, n = 20)
+  
+  ggplot(df, aes(log2FoldChange, -log10(padj))) +
+    geom_point(aes(color = sig), size = 0.5, alpha = 0.5) +
+    ggrepel::geom_text_repel(
+      data = top,
+      aes(label = symbol),
+      size = 2.5,
+      max.overlaps = 15,
+      segment.size = 0.2
+    ) +
+    scale_color_manual(values = c(ns = "grey70", sig = "darkred")) +
+    labs(title = title, x = "log2 Fold Change", y = "-log10 Adjusted P") +
+    theme_minimal() +
+    theme(legend.position = "none")
+}
+```
+
+```{r volcano-mcti, fig.height = 8, fig.width = 7, fig.cap = "Volcano plots for MCTi contrasts."}
+cowplot::plot_grid(
+  plot_volcano(deg_tgfb, "TGFβ vs CTL"),
+  plot_volcano(deg_azd, "AZD vs VEH in TGFβ"),
+  plot_volcano(deg_vb, "VB vs VEH in TGFβ"),
+  plot_volcano(deg_dual, "AZD/VB vs VEH in TGFβ"),
+  ncol = 2
+)
+```
+
+```{r volcano-vb253, fig.cap = "Volcano plots for VB253 contrasts."}
+cowplot::plot_grid(
+  plot_volcano(deg_tgfb_vb253, "TGFβ vs CTL"),
+  plot_volcano(deg_vb253, "VB253 vs VEH in TGFβ"),
+  ncol = 2
+)
+```
+
+## Gene set enrichment analysis
+
+GSEA is performed using the `fgsea` package with Hallmark gene sets from
+MSigDB. Genes are ranked by the Wald statistic from DESeq2.
+
+```{r gsea-setup}
+hallmark <-
+  msigdbr::msigdbr(species = "Homo sapiens", category = "H") |>
+  select(gs_name, ensembl_gene) |>
+  group_by(gs_name) |>
+  summarise(genes = list(ensembl_gene), .groups = "drop") |>
+  deframe()
+```
+
+```{r gsea-function}
+run_gsea <- function(deg, pathways) {
+  ranks <-
+    deg |>
+    filter(!is.na(stat)) |>
+    select(row, stat) |>
+    arrange(stat) |>
+    deframe()
+  
+  fgsea::fgsea(pathways = pathways, stats = ranks, eps = 0,
+               nPermSimple = 10000) |>
+    as_tibble() |>
+    filter(padj < 0.05) |>
+    mutate(pathway = str_remove(pathway, "^HALLMARK_")) |>
+    arrange(desc(NES))
+}
+```
+
+### MCTi
+
+```{r gsea-mcti}
+gsea_tgfb <- run_gsea(deg_tgfb, hallmark)
+gsea_azd  <- run_gsea(deg_azd, hallmark)
+gsea_vb   <- run_gsea(deg_vb, hallmark)
+gsea_dual <- run_gsea(deg_dual, hallmark)
+```
+
+### VB253
+
+```{r gsea-vb253}
+gsea_tgfb_vb253 <- run_gsea(deg_tgfb_vb253, hallmark)
+gsea_vb253      <- run_gsea(deg_vb253, hallmark)
+```
+
+### Hallmark pathway dot plot
+
+This visualization compares pathway enrichment across the MCTi drug conditions.
+
+```{r gsea-dotplot, fig.height = 8, fig.width = 6, fig.cap = "GSEA dot plot comparing Hallmark pathway enrichment across drug conditions."}
+gsea_combined <-
+  list(
+    "TGFβ" = gsea_tgfb,
+    "AZD" = gsea_azd,
+    "VB" = gsea_vb,
+    "AZD/VB" = gsea_dual
+  ) |>
+  bind_rows(.id = "comparison") |>
+  mutate(
+    pathway = str_replace_all(pathway, "_", " "),
+    comparison = factor(comparison, levels = c("TGFβ", "AZD", "VB", "AZD/VB"))
+  )
+
+ord <-
+  gsea_combined |>
+  select(pathway, comparison, NES) |>
+  pivot_wider(names_from = "comparison", values_from = "NES") |>
+  arrange(
+    desc("TGFβ"),
+    desc("AZD"),
+    desc("VB"),
+    desc("AZD/VB")
+  ) |>
+  pull(pathway)
+
+gsea_combined |> 
+  mutate(pathway = factor(pathway, levels = ord)) |> 
+  ggplot(aes(comparison, pathway)) +
+  geom_point(aes(fill = NES), shape = 21, size = 3, color = "white") +
+  scale_fill_gradient2(
+    low = "blue", mid = "white", high = "red",
+    limits = c(-2, 2), oob = scales::squish
+  ) +
+  scale_y_discrete(limits = rev) +
+  labs(x = NULL, y = NULL) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 7),
+    panel.grid.major.y = element_line(linewidth = 0.25, color = "grey90")
+  )
+```
+
+## Transcription factor enrichment analysis
+
+TFEA uses decoupleR with DoRothEA regulons (confidence levels A and B) to
+infer transcription factor activities from normalized counts. Activity scores
+are then tested across experimental groups using limma.
+
+```{r tfea-functions}
+prep_count_matrix <- function(dds) {
+  rd <-
+    as_tibble(rowData(dds), rownames = "row") |>
+    filter(!is.na(symbol), symbol != "") |>
+    group_by(symbol) |>
+    slice_max(baseMean, n = 1, with_ties = FALSE) |>
+    ungroup() |>
+    select(row, symbol)
+  
+  mat <- counts(dds, normalized = TRUE)
+  mat <- mat[rd$row, , drop = FALSE]
+  rownames(mat) <- rd$symbol
+  mat
+}
+
+run_tfea <- function(dds) {
+  mat <- prep_count_matrix(dds)
+  
+  regulons <-
+    dorothea::dorothea_hs |>
+    filter(confidence %in% c("A", "B")) |>
+    rename(source = tf)
+  
+  decoupleR::run_viper(
+    mat = mat,
+    network = regulons,
+    .source = "source",
+    .target = "target",
+    .mor = "mor",
+    minsize = 5
+  )
+}
+
+pivot_tfea_scores <- function(tfea_result) {
+  tfea_result |>
+    filter(statistic == "viper") |>
+    select(source, condition, score) |>
+    pivot_wider(names_from = condition, values_from = score) |>
+    column_to_rownames("source") |>
+    as.matrix()
+}
+```
+
+```{r tfea-run}
+tfea_mcti <- run_tfea(dds_mcti)
+tfea_vb253 <- run_tfea(dds_vb253)
+```
+
+### Limma analysis of TF activity scores
+
+TF activity scores are assembled into a matrix and tested with limma contrasts
+to identify transcription factors with differential activity between conditions.
+The MCTi experiment uses `duplicateCorrelation` to account for replicate
+blocking.
+
+```{r tfea-limma}
+fit_tf_limma <- function(scores, dds, contrasts_list, block = NULL) {
+  cd <- as_tibble(colData(dds), rownames = "sample_id")
+  scores <- scores[, cd$sample_id, drop = FALSE]
+  
+  design <- model.matrix(~ 0 + group, data = colData(dds))
+  colnames(design) <- str_remove(colnames(design), "^group")
+  
+  cm <- do.call(limma::makeContrasts, c(contrasts_list, list(levels = design)))
+  
+  if (!is.null(block)) {
+    corfit <- limma::duplicateCorrelation(scores, design, block = block)
+    fit <- limma::lmFit(scores, design,
+                        block = block,
+                        correlation = corfit$consensus)
+  } else {
+    fit <- limma::lmFit(scores, design)
+  }
+  
+  fit |>
+    limma::contrasts.fit(cm) |>
+    limma::eBayes()
+}
+```
+
+```{r tfea-mcti-fit}
+scores_mcti <- pivot_tfea_scores(tfea_mcti)
+
+fit_mcti <- fit_tf_limma(
+  scores_mcti,
+  dds_mcti,
+  contrasts_list = list(
+    tgfb = "TGFβ.VEH - CTL.VEH",
+    azd  = "TGFβ.AZD - TGFβ.VEH",
+    vb   = "TGFβ.VB - TGFβ.VEH",
+    dual = "TGFβ.AZD.VB - TGFβ.VEH"
+  ),
+  block = dds_mcti$replicate
+)
+
+limma::topTable(fit_mcti, coef = "tgfb", number = 10) |>
+  as_tibble(rownames = "tf")
+```
+
+```{r tfea-vb253-fit}
+scores_vb253 <- pivot_tfea_scores(tfea_vb253)
+
+fit_vb253 <- fit_tf_limma(
+  scores_vb253,
+  dds_vb253,
+  contrasts_list = list(
+    tgfb  = "TGFβ.VEH - CTL.VEH",
+    vb253 = "TGFβ.VB253 - TGFβ.VEH"
+  )
+)
+
+limma::topTable(fit_vb253, coef = "vb253", number = 10) |>
+  as_tibble(rownames = "tf")
+```
+
+## Session info
+
+```{r session-info, eval = TRUE}
+sessionInfo()
+```

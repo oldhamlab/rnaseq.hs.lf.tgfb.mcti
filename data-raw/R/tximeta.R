@@ -78,8 +78,29 @@ build_coldata_vb253 <- function(quant_files, samples_file) {
 #' annotations. Column names in rowData are lowercased.
 #'
 #' @param coldata A tibble with at least `files` and `names` columns.
+#' @param index_dir Character. Path to the index directory containing the
+#'   salmon index and GENCODE reference files.
+#' @param gencode_version Character or numeric. GENCODE release version.
 #' @return A SummarizedExperiment object.
-import_tximeta <- function(coldata) {
+import_tximeta <- function(coldata, index_dir = "data-raw/index",
+                           gencode_version = "47") {
+  gv <- as.character(gencode_version)
+
+  # Register the linked transcriptome so tximeta uses local files
+  # instead of downloading from FTP
+  jsonfile <- file.path(index_dir, "salmon_index", "linked_txome.json")
+  if (!file.exists(jsonfile)) {
+    tximeta::makeLinkedTxome(
+      indexDir = file.path(index_dir, "salmon_index"),
+      source = "GENCODE",
+      organism = "Homo sapiens",
+      release = gv,
+      genome = "GRCh38",
+      fasta = file.path(index_dir, paste0("gencode.v", gv, ".transcripts.fa.gz")),
+      gtf = file.path(index_dir, paste0("gencode.v", gv, ".annotation.gtf.gz"))
+    )
+  }
+
   se <- tximeta::tximeta(coldata) |>
     tximeta::summarizeToGene()
 
@@ -106,6 +127,40 @@ import_tximeta <- function(coldata) {
 
   names(rd) <- tolower(names(rd))
   SummarizedExperiment::rowData(se) <- rd
+
+  se
+}
+
+
+#' Add Salmon mapping statistics to colData
+#'
+#' Reads `meta_info.json` from each sample's Salmon output directory and
+#' adds alignment quality metrics to the SummarizedExperiment's colData.
+#'
+#' @param se A SummarizedExperiment object.
+#' @param quant_files Character vector of quant.sf file paths.
+#' @return The input SE with additional colData columns: `num_processed`,
+#'   `num_mapped`, `num_decoy`, `mapping_rate`, and `percent_mapped`.
+add_mapping_rates <- function(se, quant_files) {
+  meta_files <- file.path(dirname(quant_files), "aux_info", "meta_info.json") |>
+    purrr::set_names(basename(dirname(quant_files)))
+
+  qc <- meta_files |>
+    purrr::map(jsonlite::fromJSON) |>
+    purrr::map_dfr(~ tibble::tibble(
+      num_processed = .x$num_processed,
+      num_mapped = .x$num_mapped,
+      num_decoy = .x$num_decoy_fragments,
+      mapping_rate = .x$mapping_rate,
+      percent_mapped = round(.x$percent_mapped, 1)
+    ), .id = "sample")
+
+  idx <- match(colnames(se), qc$sample)
+  se$num_processed <- qc$num_processed[idx]
+  se$num_mapped <- qc$num_mapped[idx]
+  se$num_decoy <- qc$num_decoy[idx]
+  se$mapping_rate <- qc$mapping_rate[idx]
+  se$percent_mapped <- qc$percent_mapped[idx]
 
   se
 }

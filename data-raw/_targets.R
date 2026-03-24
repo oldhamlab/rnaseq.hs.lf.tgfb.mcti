@@ -40,12 +40,14 @@ list(
   tar_target(
     mcti,
     build_coldata_mcti(quant_files, samples_file) |>
-      import_tximeta()
+      import_tximeta() |>
+      add_mapping_rates(quant_files)
   ),
   tar_target(
     vb253,
     build_coldata_vb253(quant_files, samples_file) |>
-      import_tximeta()
+      import_tximeta() |>
+      add_mapping_rates(quant_files)
   ),
   tar_target(
     export_mcti,

@@ -11,6 +11,7 @@
 #
 # Usage (from project root):
 #   snakemake -s data-raw/Snakefile --sdm conda -c 7
+#   snakemake -s data-raw/Snakefile --configfile data-raw/config.yaml --sdm conda -c 16 --rerun-triggers mtime
 #
 # Or launched from targets via system2().
 
@@ -42,11 +43,12 @@ DL_METHODS = config["download_methods"]
 # Pre-compute reference file paths
 TRANSCRIPTS_FA = os.path.join(INDEX, "gencode.v" + GV + ".transcripts.fa.gz")
 GENOME_FA      = os.path.join(INDEX, "GRCh38.primary_assembly.genome.fa.gz")
+ANNOTATION_GTF = os.path.join(INDEX, "gencode.v" + GV + ".annotation.gtf.gz")
 DECOYS_TXT     = os.path.join(INDEX, "decoys.txt")
 GENTROME_FA    = os.path.join(INDEX, "gentrome.fa.gz")
 SALMON_IDX     = os.path.join(INDEX, "salmon_index")
 
-GENCODE_BASE   = ("ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/"
+GENCODE_BASE   = ("https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/"
                    "release_" + GV)
 
 # ---------------------------------------------------------------------------
@@ -54,7 +56,8 @@ GENCODE_BASE   = ("ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/"
 # ---------------------------------------------------------------------------
 rule all:
     input:
-        expand(os.path.join(QUANTS, "{sample}", "quant.sf"), sample=SAMPLES)
+        expand(os.path.join(QUANTS, "{sample}", "quant.sf"), sample=SAMPLES),
+        ANNOTATION_GTF
 
 # ---------------------------------------------------------------------------
 # Download reads via kingfisher
@@ -67,7 +70,7 @@ rule download_reads:
         srr = lambda wc: SRR_MAP[wc.sample],
         outdir = READS,
         methods = DL_METHODS
-    threads: 4
+    threads: THREADS
     retries: 3
     conda:
         "envs/kingfisher.yaml"
@@ -75,6 +78,7 @@ rule download_reads:
         """
         mkdir -p {params.outdir}
         cd {params.outdir}
+        rm -f {params.srr}_1.fastq.gz {params.srr}_2.fastq.gz {params.srr}*.aria2
         kingfisher get \
             -r {params.srr} \
             -m {params.methods} \
@@ -107,6 +111,20 @@ rule genome:
     params:
         outdir = INDEX,
         url = GENCODE_BASE + "/GRCh38.primary_assembly.genome.fa.gz"
+    conda:
+        "envs/download.yaml"
+    shell:
+        """
+        mkdir -p {params.outdir}
+        wget -q {params.url} -P {params.outdir}
+        """
+
+rule annotation:
+    output:
+        ANNOTATION_GTF
+    params:
+        outdir = INDEX,
+        url = GENCODE_BASE + "/gencode.v" + GV + ".annotation.gtf.gz"
     conda:
         "envs/download.yaml"
     shell:

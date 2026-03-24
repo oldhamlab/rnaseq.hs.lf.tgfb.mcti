@@ -8,3 +8,4 @@ data-raw/index
 data-raw/reads
 .snakemake
 data-raw/quants
+inst/doc
