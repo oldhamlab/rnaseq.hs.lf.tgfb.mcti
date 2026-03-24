@@ -4,7 +4,7 @@
 \name{rnaseq.hs.lf.tgfb.mcti-package}
 \alias{rnaseq.hs.lf.tgfb.mcti}
 \alias{rnaseq.hs.lf.tgfb.mcti-package}
-\title{rnaseq.hs.lf.tgfb.mcti: What the Package Does (One Line, Title Case)}
+\title{rnaseq.hs.lf.tgfb.mcti: RNA-seq of Lactate Transporter Inhibition in Human Lung Myofibroblasts}
 \description{
 This package is a data repository for RNA-seq data obtained to study the impact of lactate transport inhibition on myofibroblast differentiation. In the first experiment, normal human lung fibroblasts (Lonza) were treated with TGFβ (2 ng/mL) in combination with MCT1 inhibitor AZD3965 (100 nM) or MCT4 inhibitor VB124 (10 μM), separately or together, with DMSO (0.1%) as the vehicle control. In the second experiment, normal human lung fibroblasts were treated with MCT4 inhibitor VB253 (10 μM) or DMSO (0.1%) as the vehicle control. RNA was obtained after 48 h of treatment and submitted for sequencing at BGI Genomics.
 }

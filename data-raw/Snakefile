@@ -11,7 +11,6 @@
 #
 # Usage (from project root):
 #   snakemake -s data-raw/Snakefile --sdm conda -c 7
-#   snakemake -s data-raw/Snakefile --configfile data-raw/config.yaml --sdm conda -c 16 --rerun-triggers mtime
 #
 # Or launched from targets via system2().
 

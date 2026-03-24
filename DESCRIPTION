@@ -1,6 +1,6 @@
 Package: rnaseq.hs.lf.tgfb.mcti
 Title: RNA-seq of Lactate Transporter Inhibition in Human Lung Myofibroblasts
-Version: 0.0.0.9000
+Version: 1.0.0
 Authors@R: 
     person(
         given = "William", 

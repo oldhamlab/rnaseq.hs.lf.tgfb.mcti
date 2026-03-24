@@ -50,8 +50,7 @@ run_snakemake <- function(samples_file,
     "-s", snakefile,
     "--configfile", configfile,
     "--sdm", "conda",
-    "-c", cores,
-    "--rerun-triggers mtime"
+    "-c", cores
   )
 
   message("Running: ", smk, " ", paste(args, collapse = " "))
